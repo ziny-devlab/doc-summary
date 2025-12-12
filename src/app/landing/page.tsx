@@ -1,4 +1,4 @@
-import { Header, SafariHeader, Title } from "@/components";
+import { Header, Title } from "@/components";
 import Link from "next/link";
 
 export default function Landing() {
