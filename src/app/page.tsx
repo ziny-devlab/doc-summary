@@ -5,9 +5,17 @@ import { useState } from "react";
 
 export default function Home() {
   const [url, setUrl] = useState("");
+  const [keywordsText, setKeywordsText] = useState("");
   const [summary, setSummary] = useState("");
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  const parseKeywords = (input: string) => {
+    return input
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  };
 
   const handleCopy = async () => {
     try {
@@ -25,14 +33,67 @@ export default function Home() {
     setSummary("");
 
     try {
+      const keywords = parseKeywords(keywordsText);
       const res = await fetch("/api/summarize", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({
+          url,
+          keywords: keywords.length > 0 ? keywords : undefined,
+        }),
       });
 
       const data = await res.json();
-      setSummary(data.summary || "요약 실패");
+
+      if (Array.isArray(data?.results) && data.results.length > 0) {
+        const merged = data.results
+          .map((r: any) => {
+            const keyword = String(r?.keyword || "").trim();
+            const s = String(r?.summary || "요약 실패").trim();
+            const excerpts = Array.isArray(r?.excerpts)
+              ? r.excerpts.map((x: any) => String(x))
+              : [];
+
+            const missingPoints = Array.isArray(r?.missing_points)
+              ? r.missing_points.map((x: any) => String(x))
+              : [];
+
+            const suggestedSources = Array.isArray(r?.suggested_sources)
+              ? r.suggested_sources
+                  .map((x: any) => ({
+                    title: String(x?.title || ""),
+                    url: String(x?.url || ""),
+                  }))
+                  .filter((x: any) => x.title && x.url)
+              : [];
+
+            const excerptText =
+              excerpts.length > 0
+                ? excerpts.map((x: string) => `- ${x}`).join("\n")
+                : "- (발췌 없음)";
+
+            const missingText =
+              missingPoints.length > 0
+                ? missingPoints.map((x: string) => `- ${x}`).join("\n")
+                : "- (없음)";
+
+            const sourcesText =
+              suggestedSources.length > 0
+                ? suggestedSources
+                    .map((x: any) => `- ${x.title}: ${x.url}`)
+                    .join("\n")
+                : "- (추천 없음)";
+
+            return `## 키워드\n${
+              keyword || "(없음)"
+            }\n\n### 상세 요약\n${s}\n\n### 관련 원문 발췌\n${excerptText}\n\n### 원문에서 확인 불가한 부분\n${missingText}\n\n### 추가로 참고할 자료\n${sourcesText}`;
+          })
+          .join("\n\n---\n\n");
+
+        setSummary(merged);
+      } else {
+        setSummary(data.summary || "요약 실패");
+      }
     } catch (err) {
       console.error(err);
       setSummary("요약 중 오류 발생");
@@ -55,6 +116,13 @@ export default function Home() {
             placeholder="요약할 URL을 입력하세요"
             onChange={(e) => setUrl(e.target.value)}
             className="w-full p-3 border border-neutral-300 rounded-lg bg-neutral-50 text-neutral-800 placeholder-neutral-400 focus:outline-none focus:ring-1 focus:ring-neutral-400 hover:bg-neutral-100 transition"
+          />
+
+          <textarea
+            value={keywordsText}
+            placeholder="키워드(문장)를 한 줄에 하나씩 입력하세요 (선택)\n예: rate limit은 어떻게 동작하나요?\n예: 인증/토큰 갱신 절차"
+            onChange={(e) => setKeywordsText(e.target.value)}
+            className="w-full p-3 border border-neutral-300 rounded-lg bg-neutral-50 text-neutral-800 placeholder-neutral-400 focus:outline-none focus:ring-1 focus:ring-neutral-400 hover:bg-neutral-100 transition mt-3 min-h-24"
           />
           <button
             className="px-5 py-2 my-3 w-full rounded-xl border border-neutral-300 bg-white text-neutral-700 font-medium shadow-sm hover:bg-neutral-100 transition disabled:opacity-50 disabled:cursor-not-allowed text-base sm:text-lg"
@@ -87,9 +155,9 @@ export default function Home() {
                     {copied ? "복사 완료!" : "📋"}
                   </button>
                 </div>
-                <p className="text-neutral-700 whitespace-pre-line text-base leading-relaxed">
+                <pre className="text-neutral-700 whitespace-pre-wrap text-base leading-relaxed font-sans">
                   {summary}
-                </p>
+                </pre>
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center p-8 text-neutral-400">
